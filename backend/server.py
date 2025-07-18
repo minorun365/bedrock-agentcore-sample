@@ -1,7 +1,10 @@
-from strands import Agent, tool
-from strands.models import BedrockModel
-from bedrock_agentcore.runtime import BedrockAgentCoreApp
 import feedparser
+from strands import Agent, tool
+from bedrock_agentcore.runtime import BedrockAgentCoreApp
+from dotenv import load_dotenv
+
+# 環境変数を読み込む
+load_dotenv()
 
 # ツールを定義
 @tool
@@ -25,17 +28,16 @@ def get_aws_updates(service_name: str) -> str:
 
     return result
 
-app = BedrockAgentCoreApp()
-bedrock_model = BedrockModel(
-    region_name="us-west-2",
-    model_id="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
-)
+# エージェントを作成
 agent = Agent(
-    model=bedrock_model,
-    system_prompt="日本語で話してね。",
+    model="us.anthropic.claude-3-5-haiku-20241022-v1:0",
     tools=[get_aws_updates]
 )
 
+# AgentCoreを初期化
+app = BedrockAgentCoreApp()
+
+# AgentCoreのエントリーポイント関数を定義
 @app.entrypoint
 async def invoke(payload):
     """ユーザーの質問にストリーミングで答えてください。"""
@@ -44,7 +46,6 @@ async def invoke(payload):
     # ストリーミングでレスポンスを生成
     stream = agent.stream_async(user_message)
     async for event in stream:
-        print(event)  # デバッグ用
         yield event
 
 app.run()

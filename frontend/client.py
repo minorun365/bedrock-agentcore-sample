@@ -2,9 +2,13 @@
 import asyncio
 import boto3
 import json
-import codecs
 import uuid
+import os
 import streamlit as st
+from dotenv import load_dotenv
+
+# 環境変数を読み込む
+load_dotenv()
 
 # Bedrock AgentCoreクライアントを初期化
 agent_core_client = boto3.client('bedrock-agentcore')
@@ -22,60 +26,50 @@ async def process_stream(service_name, container):
     
     # エージェントを呼び出し
     agent_response = agent_core_client.invoke_agent_runtime(
-        agentRuntimeArn="arn:aws:bedrock-agentcore:us-west-2:715841358122:runtime/main-vsNCwb7avp",
+        agentRuntimeArn=os.getenv("AGENT_RUNTIME_ARN"),
         runtimeSessionId=session_id,
         payload=json.dumps({"prompt": prompt}).encode()
     )
     
-    # ストリーミングレスポンスを処理
-    for line in agent_response["response"].iter_lines(chunk_size=10):
-        if line:
-            line = line.decode("utf-8")
-            if line.startswith("data: "):
-                line = line[6:]
-                try:
-                    # JSONデータをパース
-                    data = json.loads(line)
+    # エージェントからのストリーミングレスポンスを処理    
+    for line in agent_response["response"].iter_lines():
+        if not line:
+            continue
+            
+        line = line.decode("utf-8")
+        if not line.startswith("data: "):
+            continue
+            
+        try:
+            data = json.loads(line[6:])
+            
+            if isinstance(data, dict):
+                event = data.get("event", {})
+
+                # ツール実行を検出して表示
+                if "contentBlockStart" in event:
+                    tool_use = event["contentBlockStart"].get("start", {}).get("toolUse", {})
+                    tool_name = tool_use.get("name")
                     
-                    if isinstance(data, dict):
-                        event = data.get("event", {})
+                    # バッファをクリア
+                    if response:
+                        text_holder.markdown(response)
+                        response = ""
+
+                    # ツール実行のメッセージを表示
+                    container.info(f"🔧 {tool_name} ツールを実行中…")
+                    text_holder = container.empty()
+                
+                # テキストを抽出してリアルタイム表示
+                elif "contentBlockDelta" in event:
+                    delta = event["contentBlockDelta"]["delta"]
+                    if "text" in delta:
+                        text = delta["text"]
+                        response += text
+                        text_holder.markdown(response)
                         
-                        # ツール実行を検出して表示
-                        if "contentBlockStart" in event:
-                            tool_use = event["contentBlockStart"].get("start", {}).get("toolUse", {})
-                            tool_name = tool_use.get("name")
-                            
-                            # バッファをクリア
-                            if response:
-                                text_holder.markdown(response)
-                                response = ""
-                            
-                            # ツール実行のメッセージを表示
-                            container.info(f"🔧 {tool_name} ツールを実行中…")
-                            text_holder = container.empty()
-                        
-                        # contentBlockDeltaイベントからテキストを抽出
-                        elif "contentBlockDelta" in event:
-                            delta = event["contentBlockDelta"]["delta"]
-                            if "text" in delta:
-                                text = delta["text"]
-                                # Unicodeエスケープをデコード
-                                try:
-                                    decoded_text = codecs.decode(text, 'unicode_escape').encode('latin1').decode('utf-8')
-                                    response += decoded_text
-                                    text_holder.markdown(response)
-                                except:
-                                    response += text
-                                    text_holder.markdown(response)
-                        
-                        # テキストを抽出してリアルタイム表示（dataフィールドから）
-                        elif text := data.get("data"):
-                            response += text
-                            text_holder.markdown(response)
-                                    
-                except json.JSONDecodeError:
-                    # JSONでない場合はスキップ
-                    pass
+        except json.JSONDecodeError:
+            continue
 
 # ボタンを押したら生成開始
 if st.button("確認"):
