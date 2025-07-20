@@ -14,15 +14,15 @@ load_dotenv()
 agent_core_client = boto3.client('bedrock-agentcore')
 
 # ページタイトルと入力欄を表示
-st.title("AWSアップデート確認くん")
-service_name = st.text_input("アップデートを知りたいAWSサービス名を入力してください：")
+st.title("チャットボット")
+user_message = st.text_input("質問やメッセージを入力してください：")
 
 # 非同期ストリーミング処理
-async def process_stream(service_name, container):
+async def process_stream(user_message, container):
     text_holder = container.empty()
     response = ""
     session_id = str(uuid.uuid4())
-    prompt = f"AWSの{service_name.strip()}の最新アップデートを、日付つきで要約して。"
+    prompt = user_message.strip()
     
     # エージェントを呼び出し
     agent_response = agent_core_client.invoke_agent_runtime(
@@ -72,8 +72,8 @@ async def process_stream(service_name, container):
             continue
 
 # ボタンを押したら生成開始
-if st.button("確認"):
-    if service_name:
-        with st.spinner("アップデートを確認中..."):
+if st.button("送信"):
+    if user_message:
+        with st.spinner("回答を生成中..."):
             container = st.container()
-            asyncio.run(process_stream(service_name, container))
+            asyncio.run(process_stream(user_message, container))
